@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: life_insurance_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: life_insurance_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Mount your SQL files to the initialization directory
+      - ./backend/src/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./backend/src/db/auth-schema.sql:/docker-entrypoint-initdb.d/02-auth-schema.sql
+      # Or use the combined file if you create it:
+      # - ./backend/src/db/00-init-complete.sql:/docker-entrypoint-initdb.d/00-init-complete.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: 
+      context: ./backend
+      target: development  # Use development stage from Dockerfile
+    container_name: life_insurance_backend
+    environment:
+      NODE_ENV: development
+      PORT: 8001
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/life_insurance_db
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3001
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run dev
+
+  frontend:
+    build: ./frontend
+    container_name: life_insurance_frontend
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:8001
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+
+volumes:
+  postgres_data:
